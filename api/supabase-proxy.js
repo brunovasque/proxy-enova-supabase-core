@@ -1,16 +1,31 @@
 export default async function handler(req, res) {
-  const url = `${process.env.SUPABASE_URL}/rest/v1${req.url}`;
+  const { SUPABASE_URL, SUPABASE_SERVICE_ROLE } = process.env;
 
-  const supabaseRes = await fetch(url, {
-    method: req.method,
-    headers: {
-      apikey: process.env.SUPABASE_SERVICE_ROLE,
-      Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE}`,
-      "Content-Type": "application/json",
-    },
-    body: ["GET", "HEAD"].includes(req.method) ? undefined : req.body,
-  });
+  // Remove "/api/supabase-proxy" e mantém só o restante da URL
+  const path = req.url.replace("/api/supabase-proxy", "");
 
-  const data = await supabaseRes.text();
-  res.status(supabaseRes.status).send(data);
+  // Monta a URL completa
+  const targetUrl = `${SUPABASE_URL}${path}`;
+
+  try {
+    const response = await fetch(targetUrl, {
+      method: req.method,
+      headers: {
+        "Content-Type": req.headers["content-type"] || "application/json",
+        "apikey": SUPABASE_SERVICE_ROLE,
+        "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE}`
+      },
+      body: req.method !== "GET" ? req.body : undefined
+    });
+
+    const text = await response.text();
+    res.status(response.status).send(text);
+
+  } catch (err) {
+    res.status(500).json({
+      error: true,
+      message: err.message,
+      stack: err.stack
+    });
+  }
 }

@@ -1,17 +1,13 @@
 export default async function handler(req, res) {
   const { SUPABASE_URL, SUPABASE_SERVICE_ROLE } = process.env;
 
-  // 🔥 Correção total: preserva path + query EXACTAMENTE como chegaram
-  const urlObj = new URL(req.url, "http://localhost");
-  const fullPath = urlObj.pathname.replace("/api/supabase-proxy", "") + urlObj.search;
+  // CORREÇÃO DEFINITIVA DO PREFIXO
+  const path = req.url.split("/api/supabase-proxy")[1] || "";
+  const targetUrl = `${SUPABASE_URL}${path}`;
 
-  const targetUrl = `${SUPABASE_URL}${fullPath}`;
-
-  // Lê RAW body corretamente
   let rawBody = "";
-
   await new Promise((resolve, reject) => {
-    req.on("data", chunk => rawBody += chunk);
+    req.on("data", (chunk) => (rawBody += chunk));
     req.on("end", resolve);
     req.on("error", reject);
   });
@@ -21,20 +17,19 @@ export default async function handler(req, res) {
       method: req.method,
       headers: {
         "Content-Type": req.headers["content-type"] || "application/json",
-        "apikey": SUPABASE_SERVICE_ROLE,
-        "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE}`
+        apikey: SUPABASE_SERVICE_ROLE,
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
       },
-      body: req.method !== "GET" ? rawBody : undefined
+      body: req.method !== "GET" ? rawBody : undefined,
     });
 
     const text = await response.text();
     res.status(response.status).send(text);
-
   } catch (err) {
     res.status(500).json({
       error: true,
       message: err.message,
-      stack: err.stack
+      stack: err.stack,
     });
   }
 }

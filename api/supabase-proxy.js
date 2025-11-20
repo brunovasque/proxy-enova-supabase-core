@@ -1,10 +1,10 @@
 export default async function handler(req, res) {
   const { SUPABASE_URL, SUPABASE_SERVICE_ROLE } = process.env;
 
-  // Remove "/api/supabase-proxy" e mantém só o restante da URL
+  // Remove "/api/supabase-proxy" da URL original e mantém o resto (/rest/v1/...)
   const path = req.url.replace("/api/supabase-proxy", "");
 
-  // Monta a URL completa
+  // Monta a URL final para o Supabase
   const targetUrl = `${SUPABASE_URL}${path}`;
 
   try {
@@ -20,7 +20,6 @@ export default async function handler(req, res) {
 
     const text = await response.text();
     res.status(response.status).send(text);
-
   } catch (err) {
     res.status(500).json({
       error: true,

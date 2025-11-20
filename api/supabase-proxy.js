@@ -1,39 +1,43 @@
 export default async function handler(req, res) {
-  console.log("PROXY-DIAGNOSTIC: req.url =", req.url);
   const { SUPABASE_URL, SUPABASE_SERVICE_ROLE } = process.env;
 
-  // -----------------------------
-  // 🔧 Correção definitiva do prefixo
-  // -----------------------------
-  const path = req.url.split("/api/supabase-proxy")[1] || "";
-  const targetUrl = `${SUPABASE_URL}${path}`;
+  console.log("PROXY-DIAGNOSTIC req.url =", req.url);
+
+  // ============================================================
+  // 1) PARSE CORRETO DO QUERYSTRING
+  // ============================================================
+  const url = new URL(req.url, "http://localhost");
+
+  // pega a rota Supabase da querystring
+  const supabasePath = url.searchParams.get("path") || "";
+  if (!supabasePath) {
+    return res.status(400).json({ error: "missing path param" });
+  }
+
+  // remove o parametro path da URL, deixa só filtros
+  url.searchParams.delete("path");
+  const qs = url.searchParams.toString();
+
+  // monta URL final REAL do Supabase
+  const targetUrl =
+    `${SUPABASE_URL}${supabasePath}` +
+    (qs ? `?${qs}` : "");
+
   console.log("PROXY-DIAGNOSTIC: targetUrl =", targetUrl);
 
-  // -----------------------------
-  // 🔧 Ler RAW body corretamente
-  // -----------------------------
+  // ============================================================
+  // 2) LER RAW BODY (POST/PUT/PATCH)
+  // ============================================================
   let rawBody = "";
   await new Promise((resolve, reject) => {
-    req.on("data", chunk => (rawBody += chunk));
+    req.on("data", c => (rawBody += c));
     req.on("end", resolve);
     req.on("error", reject);
   });
 
-  // -----------------------------
-  // 📌 Modo diagnóstico (retorna sem tocar no Supabase)
-  // -----------------------------
-  if (req.headers["x-proxy-diagnostic"] === "1") {
-    return res.status(200).json({
-      diagnostic: true,
-      reqUrl: req.url,
-      proxyPath: path,
-      finalUrl: targetUrl
-    });
-  }
-
-  // -----------------------------
-  // 🚀 Proxy real → para o Supabase
-  // -----------------------------
+  // ============================================================
+  // 3) FAZER O PROXY REAL
+  // ============================================================
   try {
     const response = await fetch(targetUrl, {
       method: req.method,

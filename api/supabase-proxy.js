@@ -8,6 +8,15 @@ export default async function handler(req, res) {
   const targetUrl = `${SUPABASE_URL}${path}`;
 
   try {
+    // ==========================================
+    // 📌 CORREÇÃO CRUCIAL PARA VERCEL
+    // Captura o body REAL da requisição
+    // ==========================================
+    const rawBody =
+      req.method === "POST" || req.method === "PATCH" || req.method === "PUT"
+        ? await req.text()
+        : undefined;
+
     const response = await fetch(targetUrl, {
       method: req.method,
       headers: {
@@ -15,7 +24,12 @@ export default async function handler(req, res) {
         "apikey": SUPABASE_SERVICE_ROLE,
         "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE}`
       },
-      body: req.method !== "GET" ? req.body : undefined
+      // Se GET → sem body
+      // Se POST/PATCH/PUT → passa o rawBody certo
+      body:
+        req.method === "GET" || req.method === "HEAD"
+          ? undefined
+          : rawBody
     });
 
     const text = await response.text();

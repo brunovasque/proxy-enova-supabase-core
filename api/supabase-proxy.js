@@ -9,10 +9,13 @@ export default async function handler(req, res) {
   const url = new URL(req.url, "http://localhost");
 
   // pega a rota Supabase da querystring
-  const supabasePath = url.searchParams.get("path") || "";
+  let supabasePath = url.searchParams.get("path") || "";
   if (!supabasePath) {
     return res.status(400).json({ error: "missing path param" });
   }
+
+  // 🔥 CORREÇÃO NECESSÁRIA: decodificar path
+  supabasePath = decodeURIComponent(supabasePath);
 
   // remove o parametro path da URL, deixa só filtros
   url.searchParams.delete("path");

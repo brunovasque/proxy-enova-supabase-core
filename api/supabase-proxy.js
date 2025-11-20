@@ -1,17 +1,19 @@
 export default async function handler(req, res) {
   const { SUPABASE_URL, SUPABASE_SERVICE_ROLE } = process.env;
 
-  // Remove prefixo
-  const path = req.url.replace("/api/supabase-proxy", "");
-  const targetUrl = `${SUPABASE_URL}${path}`;
+  // 🔥 Correção total: preserva path + query EXACTAMENTE como chegaram
+  const urlObj = new URL(req.url, "http://localhost");
+  const fullPath = urlObj.pathname.replace("/api/supabase-proxy", "") + urlObj.search;
 
-  // 🔧 Correção CRUCIAL: ler RAW body corretamente no Vercel
-  let rawBody = '';
+  const targetUrl = `${SUPABASE_URL}${fullPath}`;
+
+  // Lê RAW body corretamente
+  let rawBody = "";
 
   await new Promise((resolve, reject) => {
-    req.on('data', chunk => { rawBody += chunk });
-    req.on('end', resolve);
-    req.on('error', reject);
+    req.on("data", chunk => rawBody += chunk);
+    req.on("end", resolve);
+    req.on("error", reject);
   });
 
   try {
@@ -22,8 +24,6 @@ export default async function handler(req, res) {
         "apikey": SUPABASE_SERVICE_ROLE,
         "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE}`
       },
-
-      // 🔥 CORREÇÃO REAL: enviar o RAW JSON corretamente
       body: req.method !== "GET" ? rawBody : undefined
     });
 

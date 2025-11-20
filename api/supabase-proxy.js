@@ -1,3 +1,7 @@
+export const config = {
+  runtime: "nodejs20"
+};
+
 export default async function handler(req, res) {
   const { SUPABASE_URL, SUPABASE_SERVICE_ROLE } = process.env;
 

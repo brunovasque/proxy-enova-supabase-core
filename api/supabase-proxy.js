@@ -1,39 +1,52 @@
+export const config = {
+  runtime: "nodejs20"
+};
+
 export default async function handler(req, res) {
   const { SUPABASE_URL, SUPABASE_SERVICE_ROLE } = process.env;
 
-  console.log("PROXY-DIAGNOSTIC req.url =", req.url);
+  // LOG: URL recebida
+  console.log("PROXY-REQ url =", req.url);
 
   // ============================================================
-  // 1) PARSE CORRETO DO QUERYSTRING
+  // 1) GET REAL DO PATH E DOS FILTROS (cano transparente)
   // ============================================================
-  const url = new URL(req.url, "http://localhost");
+  const baseUrl = new URL(req.url, "http://localhost");
 
-  let supabasePath = url.searchParams.get("path") || "";
-  if (!supabasePath) {
-    return res.status(400).json({ error: "missing path param" });
+  // Path REST real é sempre enviado pela Enova como:
+  // /api/supabase-proxy?path=/rest/v1/enova_state&select=*&wa_id=eq.xxx
+  const rawPath = baseUrl.searchParams.get("path");
+
+  if (!rawPath) {
+    console.error("PROXY-ERROR: Missing path param");
+    return res.status(400).json({ error: "missing path parameter" });
   }
 
-  // 🔥 decodifica o path corretamente
-  supabasePath = decodeURIComponent(supabasePath);
+  // Remove param path e deixa só filtros (select, eq, neq, etc)
+  baseUrl.searchParams.delete("path");
 
-  url.searchParams.delete("path");
-  const qs = url.searchParams.toString();
+  const qs = baseUrl.searchParams.toString();
+  const finalUrl = `${SUPABASE_URL}${rawPath}${qs ? `?${qs}` : ""}`;
 
-  const targetUrl =
-    `${SUPABASE_URL}${supabasePath}` +
-    (qs ? `?${qs}` : "");
+  console.log("PROXY-TARGET =", finalUrl);
 
-  console.log("PROXY-DIAGNOSTIC: targetUrl =", targetUrl);
-
+  // ============================================================
+  // 2) RAW BODY (para POST / PATCH / UPSERT)
+  // ============================================================
   let rawBody = "";
   await new Promise((resolve, reject) => {
-    req.on("data", c => (rawBody += c));
+    req.on("data", chunk => (rawBody += chunk));
     req.on("end", resolve);
     req.on("error", reject);
   });
 
+  console.log("PROXY-BODY bytes =", rawBody.length);
+
+  // ============================================================
+  // 3) FAZ O PROXY
+  // ============================================================
   try {
-    const response = await fetch(targetUrl, {
+    const response = await fetch(finalUrl, {
       method: req.method,
       headers: {
         "Content-Type": req.headers["content-type"] || "application/json",
@@ -44,10 +57,11 @@ export default async function handler(req, res) {
     });
 
     const text = await response.text();
+    console.log("PROXY-RESP status =", response.status);
     res.status(response.status).send(text);
 
   } catch (err) {
-    console.error("PROXY ERROR:", err);
+    console.error("PROXY-FATAL:", err);
     res.status(500).json({
       error: true,
       message: err.message,

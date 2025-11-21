@@ -1,56 +1,59 @@
-export const config = {
-  runtime: "nodejs" // ✔ permitido pelo Vercel
-};
-
 export default async function handler(req, res) {
-  const { SUPABASE_URL, SUPABASE_SERVICE_ROLE } = process.env;
-
-  console.log("PROXY-DIAGNOSTIC req.url =", req.url);
-
-  const url = new URL(req.url, "http://localhost");
-
-  let supabasePath = url.searchParams.get("path") || "";
-  if (!supabasePath) {
-    return res.status(400).json({ error: "missing path param" });
-  }
-
-  supabasePath = decodeURIComponent(supabasePath);
-
-  url.searchParams.delete("path");
-  const qs = url.searchParams.toString();
-
-  const targetUrl =
-    `${SUPABASE_URL}${supabasePath}` + (qs ? `?${qs}` : "");
-
-  console.log("PROXY-DIAGNOSTIC: targetUrl =", targetUrl);
-
-  let rawBody = "";
-  await new Promise((resolve, reject) => {
-    req.on("data", c => (rawBody += c));
-    req.on("end", resolve);
-    req.on("error", reject);
-  });
-
   try {
-    const response = await fetch(targetUrl, {
+    const { path, ...rest } = req.query;
+
+    if (!path) {
+      return res.status(400).json({
+        error: true,
+        message: "Missing path parameter"
+      });
+    }
+
+    const decodedPath = decodeURIComponent(path);
+    const baseUrl = process.env.SUPABASE_URL;
+
+    if (!baseUrl) {
+      return res.status(500).json({
+        error: true,
+        message: "SUPABASE_URL is undefined inside proxy"
+      });
+    }
+
+    // Debug
+    console.log("PROXY-DIAGNOSTIC → decodedPath =", decodedPath);
+    console.log("PROXY-DIAGNOSTIC → baseUrl =", baseUrl);
+    console.log("PROXY-DIAGNOSTIC → rest =", rest);
+
+    const url = `${baseUrl}${decodedPath}?${new URLSearchParams(rest)}`;
+
+    const response = await fetch(url, {
       method: req.method,
       headers: {
-        "Content-Type": req.headers["content-type"] || "application/json",
-        apikey: SUPABASE_SERVICE_ROLE,
-        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`
+        "Content-Type": "application/json",
+        apikey: process.env.SUPABASE_SERVICE_ROLE,
+        Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE}`
       },
-      body: req.method !== "GET" ? rawBody : undefined
+      body:
+        req.method !== "GET" && req.method !== "HEAD"
+          ? JSON.stringify(req.body)
+          : undefined
     });
 
-    const text = await response.text();
-    res.status(response.status).send(text);
+    const data = await response.text();
+    let json;
 
+    try {
+      json = JSON.parse(data);
+    } catch {
+      json = { raw: data };
+    }
+
+    return res.status(response.status).json(json);
   } catch (err) {
-    console.error("PROXY ERROR:", err);
-    res.status(500).json({
+    console.error("PROXY ERROR", err);
+    return res.status(500).json({
       error: true,
-      message: err.message,
-      stack: err.stack
+      message: err.message
     });
   }
 }

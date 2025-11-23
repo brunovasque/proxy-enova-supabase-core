@@ -19,10 +19,9 @@ export default async function handler(req, res) {
       });
     }
 
-    // ================================================
-    // 🔒 REMOVER HEADERS INSEGUROS DA VERCEL
-    // ================================================
-    const unsafeHeaders = [
+    // Remove headers inseguros da Vercel
+    const unsafe = [
+      "authorization",
       "x-vercel-proxy-signature",
       "x-vercel-oidc-token",
       "x-vercel-proxied-for",
@@ -30,40 +29,17 @@ export default async function handler(req, res) {
       "x-vercel-id",
       "forwarded"
     ];
-
-    unsafeHeaders.forEach(h => delete req.headers[h.toLowerCase()]);
-
-    // ================================================
-    // REPASSA HEADERS IMPORTANTES (INCLUINDO UPSERT!)
-    // ================================================
-    const forwardHeaders = {
-      "Content-Type": req.headers["content-type"] || "application/json",
-      "Accept": req.headers["accept"] || "application/json",
-      "Prefer": req.headers["prefer"] || undefined,   // ⭐ IMPORTANTE
-      "apikey": process.env.SUPABASE_SERVICE_ROLE,
-      "Authorization": `Bearer ${process.env.SUPABASE_SERVICE_ROLE}`
-    };
-
-    // Remove undefined (caso GET)
-    Object.keys(forwardHeaders).forEach(
-      k => forwardHeaders[k] === undefined && delete forwardHeaders[k]
-    );
-
-    // ================================================
-    // DEBUG OPCIONAL
-    // ================================================
-    console.log("PROXY-DIAGNOSTIC → decodedPath =", decodedPath);
-    console.log("PROXY-DIAGNOSTIC → forwardHeaders =", forwardHeaders);
-    console.log("PROXY-DIAGNOSTIC → rest =", rest);
+    unsafe.forEach(h => delete req.headers[h]);
 
     const finalUrl = `${baseUrl}${decodedPath}?${new URLSearchParams(rest)}`;
 
-    // ================================================
-    // 🧱 ENVIA REQUISIÇÃO AO SUPABASE
-    // ================================================
     const response = await fetch(finalUrl, {
       method: req.method,
-      headers: forwardHeaders,
+      headers: {
+        "Content-Type": "application/json",
+        apikey: process.env.SUPABASE_SERVICE_ROLE,
+        Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE}`
+      },
       body:
         req.method !== "GET" && req.method !== "HEAD"
           ? JSON.stringify(req.body)
@@ -72,7 +48,6 @@ export default async function handler(req, res) {
 
     const text = await response.text();
     let json;
-
     try {
       json = JSON.parse(text);
     } catch {
@@ -80,12 +55,8 @@ export default async function handler(req, res) {
     }
 
     return res.status(response.status).json(json);
-
   } catch (err) {
     console.error("PROXY ERROR", err);
-    return res.status(500).json({
-      error: true,
-      message: err.message
-    });
+    return res.status(500).json({ error: true, message: err.message });
   }
 }

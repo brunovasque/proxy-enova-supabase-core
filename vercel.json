@@ -1,14 +1,18 @@
 {
   "version": 2,
   "functions": {
-    "api/supabase-proxy.js": {
-      "runtime": "nodejs20.x"
+    "api/*.js": {
+      "runtime": "nodejs18.x"
     }
   },
   "routes": [
     {
-      "src": "/api/supabase-proxy/(.*)",
+      "src": "/api/supabase-proxy",
       "dest": "/api/supabase-proxy.js"
+    },
+    {
+      "src": "/api/supabase-proxy-debug",
+      "dest": "/api/supabase-proxy-debug.js"
     },
     {
       "src": "/api/(.*)",

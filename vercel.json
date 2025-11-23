@@ -3,7 +3,11 @@
   "routes": [
     {
       "src": "/api/supabase-proxy",
-      "dest": "/api/supabase-proxy"
+      "dest": "/api/supabase-proxy.js"
+    },
+    {
+      "src": "/api/supabase-proxy-debug",
+      "dest": "/api/supabase-proxy-debug.js"
     }
   ]
 }

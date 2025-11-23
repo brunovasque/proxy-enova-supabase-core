@@ -20,11 +20,9 @@ export default async function handler(req, res) {
     }
 
     // ================================================
-    // 🔒 REMOVER TODOS OS HEADERS QUE A VERCEL INJETA
+    // 🔒 REMOVER HEADERS INSEGUROS DA VERCEL
     // ================================================
     const unsafeHeaders = [
-      "authorization",
-      "Authorization",
       "x-vercel-proxy-signature",
       "x-vercel-oidc-token",
       "x-vercel-proxied-for",
@@ -33,27 +31,39 @@ export default async function handler(req, res) {
       "forwarded"
     ];
 
-    unsafeHeaders.forEach(h => delete req.headers[h]);
+    unsafeHeaders.forEach(h => delete req.headers[h.toLowerCase()]);
+
+    // ================================================
+    // REPASSA HEADERS IMPORTANTES (INCLUINDO UPSERT!)
+    // ================================================
+    const forwardHeaders = {
+      "Content-Type": req.headers["content-type"] || "application/json",
+      "Accept": req.headers["accept"] || "application/json",
+      "Prefer": req.headers["prefer"] || undefined,   // ⭐ IMPORTANTE
+      "apikey": process.env.SUPABASE_SERVICE_ROLE,
+      "Authorization": `Bearer ${process.env.SUPABASE_SERVICE_ROLE}`
+    };
+
+    // Remove undefined (caso GET)
+    Object.keys(forwardHeaders).forEach(
+      k => forwardHeaders[k] === undefined && delete forwardHeaders[k]
+    );
 
     // ================================================
     // DEBUG OPCIONAL
     // ================================================
     console.log("PROXY-DIAGNOSTIC → decodedPath =", decodedPath);
-    console.log("PROXY-DIAGNOSTIC → baseUrl =", baseUrl);
+    console.log("PROXY-DIAGNOSTIC → forwardHeaders =", forwardHeaders);
     console.log("PROXY-DIAGNOSTIC → rest =", rest);
 
     const finalUrl = `${baseUrl}${decodedPath}?${new URLSearchParams(rest)}`;
 
     // ================================================
-    // 🧱 ENVIO DA REQUISIÇÃO LIMPA AO SUPABASE
+    // 🧱 ENVIA REQUISIÇÃO AO SUPABASE
     // ================================================
     const response = await fetch(finalUrl, {
       method: req.method,
-      headers: {
-        "Content-Type": "application/json",
-        "apikey": process.env.SUPABASE_SERVICE_ROLE,
-        "Authorization": `Bearer ${process.env.SUPABASE_SERVICE_ROLE}`
-      },
+      headers: forwardHeaders,
       body:
         req.method !== "GET" && req.method !== "HEAD"
           ? JSON.stringify(req.body)
@@ -70,6 +80,7 @@ export default async function handler(req, res) {
     }
 
     return res.status(response.status).json(json);
+
   } catch (err) {
     console.error("PROXY ERROR", err);
     return res.status(500).json({

@@ -1,59 +1,90 @@
 export default async function handler(req, res) {
-  try {
-    const { path, ...rest } = req.query;
+  const SUPABASE_URL = process.env.SUPABASE_URL;
+  const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
 
-    if (!path) {
-      return res.status(400).json({
-        error: true,
-        message: "Missing path parameter"
-      });
-    }
-
-    const decodedPath = decodeURIComponent(path);
-    const baseUrl = process.env.SUPABASE_URL;
-
-    if (!baseUrl) {
-      return res.status(500).json({
-        error: true,
-        message: "SUPABASE_URL is undefined inside proxy"
-      });
-    }
-
-    // Debug
-    console.log("PROXY-DIAGNOSTIC → decodedPath =", decodedPath);
-    console.log("PROXY-DIAGNOSTIC → baseUrl =", baseUrl);
-    console.log("PROXY-DIAGNOSTIC → rest =", rest);
-
-    const url = `${baseUrl}${decodedPath}?${new URLSearchParams(rest)}`;
-
-    const response = await fetch(url, {
-      method: req.method,
-      headers: {
-        "Content-Type": "application/json",
-        apikey: process.env.SUPABASE_SERVICE_ROLE,
-        Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE}`
-      },
-      body:
-        req.method !== "GET" && req.method !== "HEAD"
-          ? JSON.stringify(req.body)
-          : undefined
-    });
-
-    const data = await response.text();
-    let json;
-
-    try {
-      json = JSON.parse(data);
-    } catch {
-      json = { raw: data };
-    }
-
-    return res.status(response.status).json(json);
-  } catch (err) {
-    console.error("PROXY ERROR", err);
+  if (!SUPABASE_URL || !SERVICE_ROLE) {
     return res.status(500).json({
-      error: true,
-      message: err.message
+      error: "Missing SUPABASE_URL or SERVICE_ROLE"
     });
   }
+
+  // ================================
+  // RECONSTRUIR URL FINAL DO SUPABASE
+  // ================================
+  const { path, ...query } = req.query;
+  if (!path) {
+    return res.status(400).json({ error: "Missing 'path' query parameter" });
+  }
+
+  const url = `${SUPABASE_URL}${decodeURIComponent(path)}?${
+    new URLSearchParams(query).toString()
+  }`;
+
+  // ================================
+  // HEADER CORRIGIDO (PONTO CRÍTICO!)
+  // ================================
+  // Pegamos todos os headers do request original
+  const incomingHeaders = { ...req.headers };
+
+  // REMOVEMOS headers que o Vercel insere e não devem ser repassados
+  delete incomingHeaders.host;
+  delete incomingHeaders["x-forwarded-for"];
+  delete incomingHeaders["x-forwarded-proto"];
+  delete incomingHeaders["x-real-ip"];
+  delete incomingHeaders["content-length"];
+
+  // FORÇAMOS o header prefer de volta (o Vercel remove!
+  const finalHeaders = {
+    ...incomingHeaders,
+    "Content-Type": "application/json",
+    "Prefer": "resolution=merge-duplicates",  // <= PATCH ABSOLUTO
+    "apikey": SERVICE_ROLE,
+    "Authorization": `Bearer ${SERVICE_ROLE}`
+  };
+
+  // ================================
+  // BODY
+  // ================================
+  let bodyToSend = null;
+
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    bodyToSend = req.body ? JSON.stringify(req.body) : null;
+  }
+
+  // ================================
+  // FETCH PARA O SUPABASE
+  // ================================
+  let supabaseResponse;
+  try {
+    supabaseResponse = await fetch(url, {
+      method: req.method,
+      headers: finalHeaders,
+      body: bodyToSend
+    });
+  } catch (err) {
+    return res.status(500).json({
+      error: "Failed to reach Supabase",
+      details: err.message
+    });
+  }
+
+  // ================================
+  // LÊ RESPOSTA DO SUPABASE
+  // ================================
+  const text = await supabaseResponse.text();
+  let data = null;
+
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = text;
+  }
+
+  // SE DER ERRO, DEVOLVE MESMO ASSIM
+  if (!supabaseResponse.ok) {
+    return res.status(supabaseResponse.status).json(data);
+  }
+
+  // TUDO CERTO
+  return res.status(200).json(data);
 }

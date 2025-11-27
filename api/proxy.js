@@ -6,7 +6,11 @@ export default async function handler(req, res) {
   const supabaseURL = process.env.SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE;
 
-  const url = `${supabaseURL}${path}?${new URLSearchParams(query)}`;
+  // 🔥 CORREÇÃO CIRÚRGICA:
+  // Garante que sempre exista uma barra entre SUPABASE_URL e path
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+
+  const url = `${supabaseURL}${normalizedPath}?${new URLSearchParams(query)}`;
 
   try {
     const response = await fetch(url, {
